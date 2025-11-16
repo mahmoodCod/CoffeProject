@@ -73,11 +73,18 @@ const extractCountdownSeconds = (message?: string) => {
 };
 
 // Helper: fetch with 10s timeout
-async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 10000) {
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 15000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(input, { ...(init ?? {}), signal: controller.signal });
+    const res = await fetch(input, {
+      ...(init ?? {}),
+      headers: {
+        Accept: "application/json",
+        ...(init?.headers ?? {}),
+      },
+      signal: controller.signal,
+    });
     return res;
   } finally {
     clearTimeout(id);
@@ -210,7 +217,7 @@ export default function LoginPage() {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ phone: normalizedPhone }),
-          }, 10000);
+          }, 15000);
           break; // Success, exit retry loop
         } catch (fetchError) {
           retries++;
@@ -301,7 +308,7 @@ export default function LoginPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ phone: normalizedPhone, otp: otpCode }),
-      }, 10000);
+      }, 15000);
 
       // Check if response is ok before trying to parse JSON
       let data: ApiResponse<VerifyOtpResponse>;
