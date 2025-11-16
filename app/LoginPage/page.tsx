@@ -14,6 +14,7 @@ const RAW_API_BASE_URL =
   process.env.NEXT_PUBLIC_AUTH_API_BASE_URL ??
   "https://coffee-shop-backend-k3un.onrender.com/api/v1/auth";
 const AUTH_API_BASE_URL = RAW_API_BASE_URL.replace(/\/+$/, "");
+let apiWarmedUp = false;
 
 // Helper to log API URL for debugging
 if (typeof window !== "undefined") {
@@ -95,6 +96,16 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, ti
 
 // Helper: join base with path safely (handles double slashes)
 const apiUrl = (path: string) => `${AUTH_API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+
+// Warm-up Render/Host (best-effort, ignore errors)
+async function warmUpHost() {
+  if (apiWarmedUp) return;
+  try {
+    const origin = new URL(AUTH_API_BASE_URL).origin;
+    await fetchWithTimeout(origin, { method: "GET" }, 3000);
+  } catch {}
+  apiWarmedUp = true;
+}
 
 const createApiError = (message: string, status?: number): ApiError => {
   const error = new Error(message) as ApiError;
@@ -208,6 +219,9 @@ export default function LoginPage() {
     setInfoMessage("");
 
     try {
+      // Warm-up cold backend (Render free-tier, first-hit latency)
+      await warmUpHost();
+
       console.log("📤 Sending OTP request to:", apiUrl("/send"));
       console.log("📱 Phone:", normalizedPhone);
       
