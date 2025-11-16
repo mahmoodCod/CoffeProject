@@ -8,7 +8,10 @@ import { useAuth } from "@/contaxt/AuthContext";
 import type { User } from "@/contaxt/AuthContext";
 import { useRouter } from "next/navigation";
 
-const AUTH_API_BASE_URL = process.env.NEXT_PUBLIC_AUTH_API_BASE_URL ?? "https://coffee-shop-backend-k3un.onrender.com/api/v1/auth";
+const AUTH_API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ??
+  process.env.NEXT_PUBLIC_AUTH_API_BASE_URL ??
+  "https://coffee-shop-backend-k3un.onrender.com/api/v1/auth";
 
 // Helper to log API URL for debugging
 if (typeof window !== "undefined") {
@@ -38,6 +41,25 @@ interface ApiError extends Error {
 
 const sanitizePhoneNumber = (phone: string) => phone.replace(/\s+/g, "");
 
+// Normalize any accepted input to 09XXXXXXXXX format per backend spec
+const normalizePhoneTo09 = (rawPhone: string) => {
+  const digits = rawPhone.replace(/[^\d]/g, "");
+  // Remove possible 0098 or 98 prefix
+  if (digits.startsWith("0098")) {
+    return "0" + digits.slice(4);
+  }
+  if (digits.startsWith("98")) {
+    return "0" + digits.slice(2);
+  }
+  if (digits.startsWith("9") && digits.length === 10) {
+    return "0" + digits;
+  }
+  if (digits.startsWith("0") && digits.length === 11) {
+    return digits;
+  }
+  return digits; // fallback, server will validate
+};
+
 const isValidPhoneNumber = (phone: string) => /^(?:\+98|0098|0)?9\d{9}$/.test(phone);
 
 const extractCountdownSeconds = (message?: string) => {
@@ -49,6 +71,18 @@ const extractCountdownSeconds = (message?: string) => {
   if (Number.isNaN(mins) || Number.isNaN(secs)) return undefined;
   return mins * 60 + secs;
 };
+
+// Helper: fetch with 10s timeout
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(input, { ...(init ?? {}), signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
+}
 
 const createApiError = (message: string, status?: number): ApiError => {
   const error = Object.assign(new Error(message), { status }) as ApiError;
@@ -147,7 +181,7 @@ export default function LoginPage() {
       return;
     }
 
-    const normalizedPhone = sanitizePhoneNumber(formData.phone);
+    const normalizedPhone = normalizePhoneTo09(sanitizePhoneNumber(formData.phone));
 
     if (!isValidPhoneNumber(normalizedPhone)) {
       setError("فرمت شماره موبایل معتبر نیست");
@@ -170,13 +204,13 @@ export default function LoginPage() {
       
       while (retries <= maxRetries) {
         try {
-          response = await fetch(`${AUTH_API_BASE_URL}/send`, {
+          response = await fetchWithTimeout(`${AUTH_API_BASE_URL}/send`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ phone: normalizedPhone }),
-          });
+          }, 10000);
           break; // Success, exit retry loop
         } catch (fetchError) {
           retries++;
@@ -211,7 +245,7 @@ export default function LoginPage() {
         );
       }
 
-      const nextCountdown = extractCountdownSeconds(data.data?.message) ?? 120;
+      const nextCountdown = extractCountdownSeconds(data.data?.message) ?? 60;
       setCountdown(nextCountdown);
       setOtpSent(true);
       setInfoMessage(data.data?.message ?? "کد تأیید ارسال شد");
@@ -242,7 +276,7 @@ export default function LoginPage() {
       return;
     }
 
-    const normalizedPhone = sanitizePhoneNumber(formData.phone);
+    const normalizedPhone = normalizePhoneTo09(sanitizePhoneNumber(formData.phone));
 
     if (!isValidPhoneNumber(normalizedPhone)) {
       setError("فرمت شماره موبایل معتبر نیست");
@@ -261,13 +295,13 @@ export default function LoginPage() {
     setInfoMessage("");
 
     try {
-      const response = await fetch(`${AUTH_API_BASE_URL}/verify`, {
+      const response = await fetchWithTimeout(`${AUTH_API_BASE_URL}/verify`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ phone: normalizedPhone, otp: otpCode }),
-      });
+      }, 10000);
 
       // Check if response is ok before trying to parse JSON
       let data: ApiResponse<VerifyOtpResponse>;
@@ -301,6 +335,10 @@ export default function LoginPage() {
         throw createApiError("توکن معتبر از سرور دریافت نشد", data.status ?? response.status);
       }
 
+      // Persist token with standard key per spec
+      try {
+        localStorage.setItem("auth_token", token);
+      } catch (e) {}
       login(user, token);
       router.push("/DashboardPage");
     } catch (err) {
