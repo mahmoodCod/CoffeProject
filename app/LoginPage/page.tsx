@@ -8,10 +8,12 @@ import { useAuth } from "@/contaxt/AuthContext";
 import type { User } from "@/contaxt/AuthContext";
 import { useRouter } from "next/navigation";
 
-const AUTH_API_BASE_URL =
+// Resolve API base from env and ensure no trailing slash
+const RAW_API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   process.env.NEXT_PUBLIC_AUTH_API_BASE_URL ??
   "https://coffee-shop-backend-k3un.onrender.com/api/v1/auth";
+const AUTH_API_BASE_URL = RAW_API_BASE_URL.replace(/\/+$/, "");
 
 // Helper to log API URL for debugging
 if (typeof window !== "undefined") {
@@ -90,6 +92,9 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, ti
     clearTimeout(id);
   }
 }
+
+// Helper: join base with path safely (handles double slashes)
+const apiUrl = (path: string) => `${AUTH_API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 
 const createApiError = (message: string, status?: number): ApiError => {
   const error = Object.assign(new Error(message), { status }) as ApiError;
@@ -200,7 +205,7 @@ export default function LoginPage() {
     setInfoMessage("");
 
     try {
-      console.log("📤 Sending OTP request to:", `${AUTH_API_BASE_URL}/send`);
+      console.log("📤 Sending OTP request to:", apiUrl("/send"));
       console.log("📱 Phone:", normalizedPhone);
       
       // Retry mechanism for Render sleep mode (free tier)
@@ -211,7 +216,7 @@ export default function LoginPage() {
       
       while (retries <= maxRetries) {
         try {
-          response = await fetchWithTimeout(`${AUTH_API_BASE_URL}/send`, {
+          response = await fetchWithTimeout(apiUrl("/send"), {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -302,7 +307,7 @@ export default function LoginPage() {
     setInfoMessage("");
 
     try {
-      const response = await fetchWithTimeout(`${AUTH_API_BASE_URL}/verify`, {
+      const response = await fetchWithTimeout(apiUrl("/verify"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
