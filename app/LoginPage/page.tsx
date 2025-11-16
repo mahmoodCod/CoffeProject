@@ -97,7 +97,10 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, ti
 const apiUrl = (path: string) => `${AUTH_API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 
 const createApiError = (message: string, status?: number): ApiError => {
-  const error = Object.assign(new Error(message), { status }) as ApiError;
+  const error = new Error(message) as ApiError;
+  if (status !== undefined) {
+    error.status = status;
+  }
   return error;
 };
 
